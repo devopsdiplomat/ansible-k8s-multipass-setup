@@ -1,0 +1,50 @@
+- name: Initialize Kubernetes cluster
+  hosts: master
+  become: true
+  tasks:
+    - name: Check if Kubernetes is already initialized
+      stat:
+        path: /etc/kubernetes/manifests/kube-apiserver.yaml
+      register: kube_api_installed
+
+    - name: Initialize cluster if not already done
+      command: kubeadm init --pod-network-cidr=10.244.0.0/16 --apiserver-advertise-address={{ ansible_host }}
+      register: kubeadm_init
+      failed_when: kubeadm_init.rc != 0 and
+                  "'already initialized' not in kubeadm_init.stderr" and
+                  "'unable to create a new DNS service' not in kubeadm_init.stderr"
+      when: not kube_api_installed.stat.exists
+
+    - name: Get join command
+      command: kubeadm token create --print-join-command
+      register: kubeadm_join_command
+
+    - name: Save kubeadm join command to file
+      copy:
+        dest: /tmp/join_command.sh
+        content: |
+          #!/bin/bash
+          {{ kubeadm_join_command.stdout }}
+        mode: '0755'
+      when: kubeadm_join_command is defined
+
+    - name: Create .kube directory for ubuntu user
+      file:
+        path: /home/ubuntu/.kube
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: 0755
+
+    - name: Copy admin.conf to .kube/config
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/ubuntu/.kube/config
+        owner: ubuntu
+        group: ubuntu
+        mode: 0644
+        remote_src: yes
+
+    - name: Install pod network to support CoreDNS
+      become: false
+      command: kubectl apply -f https://reweave.azurewebsites.net/k8s/v1.28/net.yaml

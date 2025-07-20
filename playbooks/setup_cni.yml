@@ -1,0 +1,8 @@
+---
+- name: Set up Calico CNI
+  hosts: master
+  become: true
+  become_user: ubuntu
+  tasks:
+    - name: Apply Calico manifest
+      command: kubectl apply -f https://docs.projectcalico.org/manifests/calico.yml

@@ -1,0 +1,85 @@
+- name: Configure VMs for Kubernetes
+  hosts: all
+  become: true
+  tasks:
+    - name: Add all cluster hosts to /etc/hosts
+      lineinfile:
+        path: /etc/hosts
+        line: "{{ hostvars[item].ansible_host }} {{ item }}"
+        state: present
+      loop: "{{ groups['all'] }}"
+      when: hostvars[item].ansible_host is defined
+
+    - name: Install dependencies
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - gnupg-agent
+          - software-properties-common
+          - lsb-release
+        state: present
+        update_cache: yes
+
+    - name: Download containerd binary archive
+      get_url:
+        url: https://github.com/containerd/containerd/releases/download/v1.7.14/containerd-1.7.14-linux-arm64.tar.gz
+        dest: /tmp/containerd-1.7.14-linux-arm64.tar.gz
+
+    - name: Extract containerd archive to /usr/local
+      unarchive:
+        src: /tmp/containerd-1.7.14-linux-arm64.tar.gz
+        dest: /usr/local
+        remote_src: yes
+
+    - name: Ensure containerd systemd directory exists
+      file:
+        path: /usr/local/lib/systemd/system
+        state: directory
+        mode: '0755'
+
+    - name: Download containerd systemd service file
+      get_url:
+        url: https://raw.githubusercontent.com/containerd/containerd/main/containerd.service
+        dest: /usr/local/lib/systemd/system/containerd.service
+
+    - name: Create containerd config directory
+      file:
+        path: /etc/containerd
+        state: directory
+
+    - name: Generate default containerd config
+      shell: containerd config default > /etc/containerd/config.toml
+      args:
+        creates: /etc/containerd/config.toml
+
+    - name: Enable SystemdCgroup in containerd config
+      replace:
+        path: /etc/containerd/config.toml
+        regexp: 'SystemdCgroup\s*=\s*false'
+        replace: 'SystemdCgroup = true'
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable and start containerd service
+      systemd:
+        name: containerd
+        enabled: yes
+        state: started
+
+    - name: Disable swap
+      command: swapoff -a
+      when: ansible_swaptotal_mb > 0
+
+    - name: Remove swapfile from /etc/fstab
+      mount:
+        name: "{{ item }}"
+        fstype: swap
+        state: absent
+      with_items:
+        - swap
+        - none

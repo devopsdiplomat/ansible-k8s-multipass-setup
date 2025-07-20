@@ -1,0 +1,11 @@
+---
+- name: Destroy Multipass VMs
+  hosts: localhost
+  vars_files:
+    - ../vars/vms.yml
+  tasks:
+    - name: Destroy Multipass VMs
+      command: multipass delete {{ item.name }}
+      loop: "{{ vms }}"
+    - name: Purge destroyed VMs
+      command: multipass purge

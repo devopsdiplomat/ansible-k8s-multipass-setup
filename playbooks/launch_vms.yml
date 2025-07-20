@@ -1,0 +1,32 @@
+---
+- name: Launch Multipass VMs and setup SSH keys
+  hosts: localhost
+  vars_files:
+    - ../vars/vms.yml
+  vars:
+    ssh_key_path: "{{ lookup('env', 'HOME') + '/.ssh/id_rsa_multipass' }}"
+    ssh_pub_key_path: "{{ ssh_key_path + '.pub' }}"
+    vm_ssh_key_path: "/home/ubuntu/id_rsa_multipass.pub"
+    vm_authorized_key_path: "/home/ubuntu/.ssh/authorized_keys"
+  tasks:
+    - name: Ensure SSH key exists
+      command: ssh-keygen -t rsa -f {{ ssh_key_path }} -N ""
+      args:
+        creates: "{{ ssh_key_path }}"
+      changed_when: false
+
+    - name: Launch Multipass VM
+      command: >
+        multipass launch --name {{ item.name }} --cpus {{ item.cpus }} --memory {{ item.memory }} 
+                         --disk {{ item.disk }} --network name={{ item.network }},mode={{ item.network_mode }} jammy
+      loop: "{{ vms }}"
+
+    - name: Transfer SSH pub key to VM
+      command: >
+        multipass transfer {{ ssh_pub_key_path }} {{ item.name }}:{{ vm_ssh_key_path }}
+      loop: "{{ vms }}"
+
+    - name: Authorize SSH key inside VM
+      command: >
+        multipass exec {{ item.name }} -- bash -c "mkdir -p ~/.ssh && cat {{ vm_ssh_key_path }} >> {{ vm_authorized_key_path }} && chmod 600 {{ vm_authorized_key_path }} && chown ubuntu:ubuntu {{ vm_authorized_key_path }}"
+      loop: "{{ vms }}"

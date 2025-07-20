@@ -1,0 +1,69 @@
+- name: Install Kubernetes components
+  hosts: all
+  become: true
+  tasks:
+    - name: Configure crictl to use containerd
+      copy:
+        dest: /etc/crictl.yml
+        content: |
+          runtime-endpoint: unix:///var/run/containerd/containerd.sock
+        mode: '0644'
+
+    - name: Install runc
+      shell: |
+        curl -LO https://github.com/opencontainers/runc/releases/download/v1.1.12/runc.arm64
+        install -m 755 runc.arm64 /usr/local/sbin/runc
+
+    - name: Install CNI plugins
+      shell: |
+        curl -LO https://github.com/containernetworking/plugins/releases/download/v1.4.1/cni-plugins-linux-arm64-v1.4.1.tgz
+        mkdir -p /opt/cni/bin
+        tar Cxzvf /opt/cni/bin cni-plugins-linux-arm64-v1.4.1.tgz
+
+    - name: Ensure keyrings directory exists
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Download Kubernetes GPG key securely
+      get_url:
+        url: https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key
+        dest: /etc/apt/keyrings/kubernetes-apt-keyring.asc
+        mode: '0644'
+
+    - name: Convert GPG key to dearmored format (if not exists)
+      shell: |
+        gpg --dearmor < /etc/apt/keyrings/kubernetes-apt-keyring.asc > /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+      args:
+        creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+    - name: Add Kubernetes repository
+      apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /"
+        state: present
+        filename: kubernetes
+
+    - name: Install Kubernetes packages
+      apt:
+        update_cache: yes
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+
+    - name: Hold Kubernetes packages to prevent upgrades
+      dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop:
+        - kubelet
+        - kubeadm
+        - kubectl
+
+    - name: Install Helm (Kubernetes package manager)
+      shell: |
+        curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      args:
+        creates: /usr/local/bin/helm

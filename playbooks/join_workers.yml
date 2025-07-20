@@ -1,0 +1,32 @@
+---
+- name: Fetch join command from master to controller
+  hosts: master
+  become: true
+  tasks:
+    - name: Fetch join script from master
+      fetch:
+        src: /tmp/join_command.sh
+        dest: /tmp/
+        flat: yes
+
+- name: Join worker nodes to the cluster
+  hosts: workers
+  become: true
+  tasks:
+    - name: Copy join command to worker
+      copy:
+        src: /tmp/join_command.sh
+        dest: /tmp/join_command.sh
+        mode: '0755'
+
+    - name: Join cluster
+      command: /tmp/join_command.sh
+
+- name: Delete join command from control node
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Remove local join script
+      file:
+        path: /tmp/join_command.sh
+        state: absent

@@ -1,0 +1,38 @@
+---
+- name: Generate Ansible hosts.yml from Multipass VMs
+  hosts: localhost
+  gather_facts: false
+
+  vars_files:
+    - ../vars/vms.yml
+
+  tasks:
+
+    - name: Get IPs of all VMs
+      command: multipass info {{ item.name }} --format json
+      register: vm_info
+      loop: "{{ vms }}"
+      changed_when: false
+
+    - name: Parse VM IPs
+      set_fact:
+        vm_details: >-
+          {{
+            vm_details | default({}) | combine({
+              item.item.name: {
+                'ansible_host': (item.stdout | from_json).info[item.item.name].ipv4[0],
+                'ansible_user': 'ubuntu'
+              }
+            })
+          }}
+      loop: "{{ vm_info.results }}"
+
+    - name: Set master and workers
+      set_fact:
+        master_name: "{{ vms[0].name }}"
+        worker_names: "{{ vms[1:] | map(attribute='name') | list }}"
+
+    - name: Render inventory template to hosts.yml
+      template:
+        src: templates/hosts.yml.j2
+        dest: ./hosts.yml
